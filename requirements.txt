@@ -1,5 +1,7 @@
 streamlit
-torch
 transformers
+scikit-learn
+torch
 matplotlib
+umap-learn
 pandas
