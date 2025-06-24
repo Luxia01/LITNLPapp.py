@@ -1,77 +1,99 @@
 # app.py
-
 import streamlit as st
-import os
-import json
-import requests
-from datetime import datetime
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch
+import matplotlib.pyplot as plt
+import pandas as pd
+import random
 
-# 设置 Streamlit 页面
-st.set_page_config(page_title="用户 NLP 可解释系统", layout="centered")
+# -----------------------------
+# 初始化页面设置
+# -----------------------------
+st.set_page_config(page_title="NLP 模型可视化系统", layout="wide")
+st.title("🔍 基于 DistilBERT 的 NLP 模型可视化 Demo")
 
-# 用户管理
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-if "username" not in st.session_state:
-    st.session_state.username = ""
+# -----------------------------
+# 示例数据集
+# -----------------------------
+def load_sample_data():
+    return pd.DataFrame({
+        "text": [
+            "I really loved the movie!",
+            "The product was terrible and disappointing.",
+            "It was okay, not great.",
+            "Fantastic experience, would recommend!",
+            "Worst decision ever.",
+            "Nothing special, average performance.",
+            "Highly enjoyable, brilliant acting.",
+            "Awful, just awful.",
+            "A masterpiece of cinema!",
+            "Wouldn’t watch it again."
+        ]
+    })
 
-# 登录功能
-def login():
-    st.title("🔐 NLP 可解释分析系统")
-    username = st.text_input("用户名")
-    password = st.text_input("密码", type="password")
-    if st.button("登录"):
-        if username == "liming" and password == "123456":
-            st.session_state.authenticated = True
-            st.session_state.username = username
-            st.success("登录成功！")
-            st.experimental_rerun()
-        else:
-            st.error("用户名或密码错误")
+# -----------------------------
+# 模型加载
+# -----------------------------
+@st.cache_resource
+def load_model():
+    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased-finetuned-sst-2-english")
+    model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased-finetuned-sst-2-english")
+    return tokenizer, model
 
-if not st.session_state.authenticated:
-    login()
-    st.stop()
+tokenizer, model = load_model()
 
-# 日志目录
-user_dir = f"user_data/{st.session_state.username}"
-os.makedirs(user_dir, exist_ok=True)
+# -----------------------------
+# 文本输入或样本选择
+# -----------------------------
+st.sidebar.header("📌 数据输入")
+mode = st.sidebar.radio("选择输入方式：", ["自由输入", "示例样本"])
 
-st.title("🌟 NLP 模型分析 + LIT 解释 ")
+if mode == "自由输入":
+    text = st.text_area("请输入英文文本：", "I really enjoyed the film!")
+else:
+    df = load_sample_data()
+    idx = st.sidebar.number_input("选择样本编号", min_value=0, max_value=len(df)-1, step=1)
+    text = df.iloc[idx]["text"]
+    st.info(f"选中文本：{text}")
 
-# 文本输入
-text_input = st.text_area("请输入需分析的文本：", "I love this movie so much!")
+# -----------------------------
+# 运行模型并显示结果
+# -----------------------------
+if st.button("开始分析"):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+    with torch.no_grad():
+        outputs = model(**inputs)
+        probs = torch.nn.functional.softmax(outputs.logits, dim=-1).squeeze()
 
-# 文本保存
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-if text_input:
-    with open(f"{user_dir}/text_{timestamp}.txt", "w") as f:
-        f.write(text_input)
+    labels = ["Negative", "Positive"]
+    pred_label = labels[probs.argmax().item()]
 
-# 分析按钮
-if st.button("推送给 LIT 解析"):
-    st.info("正在通过 API 推送文本给 LIT...")
+    col1, col2 = st.columns(2)
 
-    # 转成 JSON
-    input_json = {
-        "text": text_input,
-        "user": st.session_state.username
-    }
+    with col1:
+        st.subheader("🧾 模型预测结果")
+        st.write(f"**预测标签：** {pred_label}")
+        st.write(f"**分类概率：** {dict(zip(labels, [round(float(p), 3) for p in probs]))}")
 
-    with open(f"{user_dir}/input_{timestamp}.json", "w") as f:
-        json.dump(input_json, f)
+        fig, ax = plt.subplots()
+        ax.bar(labels, probs.tolist(), color=["red", "green"])
+        ax.set_ylim([0, 1])
+        st.pyplot(fig)
 
-    # 假设本地 LIT 服务器运行在 127.0.0.1:7777
-    try:
-        response = requests.post("http://localhost:7777/api/analyze", json=input_json)
-        result = response.json()
+    with col2:
+        st.subheader("🧠 模拟 Attention 高亮")
+        tokens = tokenizer.tokenize(text)
+        importance = torch.rand(len(tokens))  # 随机模拟注意力值
+        highlighted = ""
+        for token, score in zip(tokens, importance):
+            token_clean = token.replace("##", "")
+            opacity = round(float(score), 2)
+            highlighted += f"<span style='background-color: rgba(255,255,0,{opacity}); padding:2px'>{token_clean}</span> "
+        st.markdown(highlighted, unsafe_allow_html=True)
 
-        st.subheader("📉 分析结果")
-        st.write("**类别概率**:", result.get("probs"))
-        st.write("**预测结果**:", result.get("label"))
+# -----------------------------
+# 底部信息
+# -----------------------------
+st.markdown("---")
+st.caption("🎯 本平台由 Streamlit + HuggingFace Transformers 构建，当前为 Demo 版本，仅用于教学用途。")
 
-        st.subheader("💡 Attention 高亮")
-        st.markdown(result.get("highlighted"), unsafe_allow_html=True)
-
-    except Exception as e:
-        st.error(f"无法连接 LIT 服务器：{e}")
