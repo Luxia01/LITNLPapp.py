@@ -69,6 +69,12 @@ import torch
 import numpy as np
 from utils import load_model_and_tokenizer, compute_embeddings
 
+# ✅ 就放在这里
+
+# 下面是你的页面设置、模型加载等代码
+st.set_page_config(page_title="NLP 可视化平台", layout="wide")
+st.title("🌟 NLP 模型可视化系统")
+
 # 页面设置
 st.set_page_config("🧠 NLP 模型解释平台", layout="wide")
 st.title("🧠 NLP 模型可视化与解释平台 (Lite)")
